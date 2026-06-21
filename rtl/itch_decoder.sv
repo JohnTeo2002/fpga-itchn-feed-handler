@@ -47,14 +47,18 @@ module itch_decoder (
                     
                     IDLE: begin
                         byte_cnt <= 8;
-                        // Byte 0-1: Length, Byte 2: Type
+                        // Byte 0-1: Length, Byte 2: Type (bits [23:16] in little-endian 64-bit stream)
                         current_msg_type <= s_axis_tdata[23:16];
                         
                         if (s_axis_tdata[23:16] == MSG_ADD_ORDER_NO_MPID) begin
-                            // Extract Order ID starts at byte 11.
-                            // Part of it lands in first 64-bit chunk depending on offsets.
+                            // TODO: Support all ITCH 5.0 message types (currently only 'A' Add Order)
+                            // Missing: Order Executed ('E'), Cancel ('X'), Delete ('D'), Replace ('U'), etc.
+                            state <= PARSE_BODY;
+                        end else if (s_axis_tdata[23:16] == MSG_ORDER_EXECUTED) begin
+                            // TODO: Implement Order Executed message parsing
                             state <= PARSE_BODY;
                         end else begin
+                            // Unsupported message type - skip payload
                             state <= (s_axis_tlast) ? IDLE : PARSE_HDR;
                         end
                     end
@@ -64,8 +68,11 @@ module itch_decoder (
                         
                         // Ultra-low latency parsing optimized extraction logic
                         if (current_msg_type == MSG_ADD_ORDER_NO_MPID) begin
-                            // Fast hardcoded slice offsets based on ITCH 5.0 specs mapping
-                            r_order_id <= s_axis_tdata[63:0]; // Simplification for word alignments
+                            // NOTE: Field extraction assumes word-aligned payload from MoldUDP64.
+                            // Real implementation requires multi-byte barrel shifter to handle unaligned payloads.
+                            // Current bit slices are placeholder pending integration with packet realignment logic.
+                            // TODO: Implement MoldUDP64 frame parsing with dynamic realignment per ITCH 5.0 spec.
+                            r_order_id <= s_axis_tdata[63:0];
                             r_is_sell  <= (s_axis_tdata[7:0] == 8'h53); // 'S'
                             r_qty      <= s_axis_tdata[39:8];
                             r_price    <= s_axis_tdata[63:32];

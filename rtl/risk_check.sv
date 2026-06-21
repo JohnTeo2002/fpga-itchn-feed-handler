@@ -22,31 +22,42 @@ module risk_check (
 
     assign s_axis_meta_ready = m_axis_risk_ready;
 
+    // Wash Trading CAM: Track recent active orders (16-entry parallel CAM for order account tracking)
+    // TODO: Implement 16-entry CAM with account ID indexing to detect cross-account wash trades
+    // Structure: {account_id, order_id, timestamp} entries for recent orders
+    // Current stub: Only qty/price checks; wash trading detection deferred to future stage
+    
     // Pipeline Registers
     decoded_meta_t pipe1_data;
     logic          pipe1_valid;
     logic          pipe1_qty_fail;
     logic          pipe1_price_fail;
+    logic          pipe1_wash_trade_fail;  // Placeholder for wash trading detection
 
     // --- PIPELINE STAGE 1: Parallel Evaluation ---
+    // TODO: Implement wash-trading detection with 16-entry CAM register array for account tracking
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            pipe1_valid      <= 1'b0;
-            pipe1_qty_fail   <= 1'b0;
-            pipe1_price_fail <= 1'b0;
-            pipe1_data       <= '0;
+            pipe1_valid           <= 1'b0;
+            pipe1_qty_fail        <= 1'b0;
+            pipe1_price_fail      <= 1'b0;
+            pipe1_wash_trade_fail <= 1'b0;
+            pipe1_data            <= '0;
         end else if (s_axis_meta_ready) begin
             pipe1_valid <= s_axis_meta_valid;
             pipe1_data  <= s_axis_meta_data;
             
             if (s_axis_meta_valid && s_axis_meta_data.is_valid) begin
-                // Check Max Quantity Check
+                // Check Max Quantity Limit
                 pipe1_qty_fail   <= (s_axis_meta_data.qty > cfg_max_order_qty);
                 // Check Price Sanity Limit
                 pipe1_price_fail <= (s_axis_meta_data.price > cfg_max_price_sanity);
+                // TODO: CAM lookup for wash trading detection
+                pipe1_wash_trade_fail <= 1'b0;
             end else begin
                 pipe1_qty_fail   <= 1'b0;
                 pipe1_price_fail <= 1'b0;
+                pipe1_wash_trade_fail <= 1'b0;
             end
         end
     end
@@ -59,7 +70,7 @@ module risk_check (
             m_risk_violation_drop <= 1'b0;
         end else if (m_axis_risk_ready) begin
             if (pipe1_valid) begin
-                if (pipe1_qty_fail || pipe1_price_fail) begin
+                if (pipe1_qty_fail || pipe1_price_fail || pipe1_wash_trade_fail) begin
                     // Soft drop or flagged down stream pass
                     m_axis_risk_valid     <= 1'b0; // Terminate upstream routing
                     m_risk_violation_drop <= 1'b1; // Trigger hardware alert register flag

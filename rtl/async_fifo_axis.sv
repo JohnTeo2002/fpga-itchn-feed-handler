@@ -27,9 +27,11 @@ module async_fifo_axis (
     decoded_meta_t mem [15:0];
 
     // --- WRITE DOMAIN LOGIC ---
-    assign s_axis_ready = ((wptr_gray[3] != rptr_gray_wr_sync_1[3]) && 
-                           (wptr_gray[2] != rptr_gray_wr_sync_1[2]) && 
-                           (wptr_gray[1:0] == rptr_gray_wr_sync_1[1:0])) ? 1'b0 : 1'b1;
+    // FIFO is full when all bits except MSB match, and MSBs differ (Gray code property)
+    logic fifo_full;
+    assign fifo_full = (wptr_gray[3] != rptr_gray_wr_sync_1[3]) && 
+                       (wptr_gray[2:0] == rptr_gray_wr_sync_1[2:0]);
+    assign s_axis_ready = ~fifo_full;
 
     always_ff @(posedge wr_clk or negedge wr_rst_n) begin
         if (!wr_rst_n) begin
@@ -58,14 +60,24 @@ module async_fifo_axis (
     assign m_axis_data = mem[rptr_bin[3:0]];
 
     // --- TWO-STAGE FLIP-FLOP SYNCHRONIZERS (CDC Mitigation) ---
-    always_ff @(posedge rd_clk) begin
-        wptr_gray_rd_sync_0 <= wptr_gray;
-        wptr_gray_rd_sync_1 <= wptr_gray_rd_sync_0;
+    always_ff @(posedge rd_clk or negedge rd_rst_n) begin
+        if (!rd_rst_n) begin
+            wptr_gray_rd_sync_0 <= '0;
+            wptr_gray_rd_sync_1 <= '0;
+        end else begin
+            wptr_gray_rd_sync_0 <= wptr_gray;
+            wptr_gray_rd_sync_1 <= wptr_gray_rd_sync_0;
+        end
     end
 
-    always_ff @(posedge wr_clk) begin
-        rptr_gray_wr_sync_0 <= rptr_gray;
-        rptr_gray_wr_sync_1 <= rptr_gray_wr_sync_0;
+    always_ff @(posedge wr_clk or negedge wr_rst_n) begin
+        if (!wr_rst_n) begin
+            rptr_gray_wr_sync_0 <= '0;
+            rptr_gray_wr_sync_1 <= '0;
+        end else begin
+            rptr_gray_wr_sync_0 <= rptr_gray;
+            rptr_gray_wr_sync_1 <= rptr_gray_wr_sync_0;
+        end
     end
 
 endmodule
